@@ -1,7 +1,3 @@
-"""
-Seleniumでスクリーニング結果を表示し、Cookieを収集する
-"""
-
 import os
 import time
 import json
@@ -23,7 +19,7 @@ options = webdriver.ChromeOptions()
 driver = webdriver.Chrome(options=options)
 wait = WebDriverWait(driver, 10)
 
-try:
+def login(EMAIL, PASSWORD):
     # ログイン
     print("ログイン中...")
     driver.get("https://pa.toyokeizai.net/id/?client_id=1oC7cgjMpj")
@@ -39,175 +35,127 @@ try:
     time.sleep(3)
     
     # ログイン後のCookieを取得
-    print("\nログイン後のCookieを取得中...")
     login_cookies = driver.get_cookies()
-    print(f"✓ {len(login_cookies)}個のCookieを取得しました")
-    
-    # スクリーニングページに遷移
-    print("\nスクリーニングページに遷移中...")
-    driver.get("https://shikiho.toyokeizai.net/screening")
+
+    return login_cookies
+
+# 引数のページにアクセスしCookieを取得する
+def getCookies(url):
+    driver.get(url)
     time.sleep(3)
     
     # スクリーニングページのCookieを取得
-    print("\nスクリーニングページのCookieを取得中...")
-    screening_cookies = driver.get_cookies()
-    print(f"✓ {len(screening_cookies)}個のCookieを取得しました")
+    cookies = driver.get_cookies()
     
     # ページが読み込まれるまで待機
     wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-    print(f"✓ スクリーニングページに遷移しました")
-    print(f"  URL: {driver.current_url}")
-    
-    # スクリーニング条件のリンクをクリックして別タブで結果を表示
-    condition_id = "MSC0103"
-    print(f"\nスクリーニング条件 {condition_id} のリンクを探しています...")
-    
-    link_selector = f"a[href*='{condition_id}']"
-    links = driver.find_elements(By.CSS_SELECTOR, link_selector)
-    
-    if links:
-        print(f"✓ リンクを発見しました")
-        
-        # リンクのURLを取得
-        link_url = links[0].get_attribute('href')
-        print(f"  リンク先URL: {link_url}")
-        
-        # 現在のウィンドウ数を記録
-        initial_windows = len(driver.window_handles)
-        
-        # リンクをクリック
-        links[0].click()
-        time.sleep(2)
-        
-        # 新しいタブが開かれたか確認
-        if len(driver.window_handles) > initial_windows:
-            print("✓ 新しいタブが開かれました")
-            driver.switch_to.window(driver.window_handles[-1])
-            time.sleep(3)
-            
-            print(f"✓ スクリーニング結果ページを表示しました")
-            print(f"  URL: {driver.current_url}")
-        else:
-            print("✓ 同じタブで遷移しました")
-            print(f"  URL: {driver.current_url}")
-        
-        # スクリーニング結果ページのCookieを取得
-        print("\nスクリーニング結果ページのCookieを取得中...")
-        result_cookies = driver.get_cookies()
-        print(f"✓ {len(result_cookies)}個のCookieを取得しました")
-        
-        # すべてのCookieをファイルに保存
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        cookies_data = {
-            "login_cookies": login_cookies,
-            "screening_cookies": screening_cookies,
-            "result_cookies": result_cookies,
-            "timestamp": timestamp,
-            "urls": {
-                "login": "https://pa.toyokeizai.net/id/?client_id=1oC7cgjMpj",
-                "screening": "https://shikiho.toyokeizai.net/screening",
-                "result": driver.current_url
-            }
-        }
-        
-        filename = f"cookies_{condition_id}_{timestamp}.json"
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(cookies_data, f, indent=2, ensure_ascii=False)
-        
-        print(f"\n✓ Cookieをファイルに保存しました: {filename}")
-        
-        # Cookie情報を表示
-        print("\n=== Cookie情報 ===")
-        for cookie in result_cookies:
-            print(f"  {cookie['name']}: {cookie['value'][:50]}..." if len(cookie['value']) > 50 else f"  {cookie['name']}: {cookie['value']}")
+    return cookies
 
+# 認証APIからCSRFトークンを取得
+def getCRFLToken():
+    print("\nCSRFトークン取得中...")
+    driver.requests.clear()
 
-        print("\nCSRFトークン取得中...")
+    # JSでHTTPリクエストを送信し、トークンをドライバで受け取る
+    driver.execute_script("""
+        fetch('https://api-screening-shikiho.toyokeizai.net/token', {
+            method: 'GET',
+            credentials: 'include'
+        })
+    """)
+    wait.until(lambda d: any("/token" in r.url for r in d.requests))
 
-        driver.requests.clear()
+    login_token = {}
+    for request in driver.requests:
+        if "/token" in request.url and request.response:
+            try:
+                import gzip
+                import json
+                body = request.response.body
 
-        driver.execute_script("""
-            fetch('https://api-screening-shikiho.toyokeizai.net/token')
-        """)
+                # gzip判定
+                if body[:2] == b'\x1f\x8b':
+                    body = gzip.decompress(body)
 
-        time.sleep(2)
-
-        login_token = {}
-        
-        for request in driver.requests:
-            if "/token" in request.url and request.response:
-                try:
-                    import gzip
-                    import json
-
-                    body = request.response.body
-
-                    # gzip判定
-                    if body[:2] == b'\x1f\x8b':
-                        body = gzip.decompress(body)
-
-                    body_text = body.decode('utf-8')
-                    print(body_text)
-
+                body_text = body.decode('utf-8')
+                
+                # body_textがJSON形式の場合のみ
+                if body_text.startswith("{"):
                     data = json.loads(body_text)
-
-                    if data.get("auth_level") == 3:
-                        print("検知")
-                        login_token = data
-                        break
-
-                except Exception as e:
-                    print(f"トークン取得エラー: {e}")
-
-        url = "https://api-screening-shikiho.toyokeizai.net/screening/search"
-
-        headers = {
-            "accept": "application/json, text/plain, */*",
-            "content-type": "application/json;charset=UTF-8",
-            "origin": "https://shikiho.toyokeizai.net",
-            "referer": "https://shikiho.toyokeizai.net/",
-            "user-agent": "Mozilla/5.0",
-            "x-csrf-token": login_token["token"]
-        }
-
-        cookies = {c['name']: c['value'] for c in result_cookies}
-
-        payload = {
-            "filter_list": ["MF0009","MF0010","MF0011","MF0012","MF0110","MF0111","MF0112","MF0113","MF0114","MF0115"],
-            "group_list": [],
-            "sort_list": [{"sort_no":1,"ref_id":2,"sort_order":"desc"}],
-            "srch_cond_id": "MSC0103",
-            "layer_id": None,
-            "srch_cond_label": "売上高を増額した銘柄",
-            "relation_exp": "2 AND 3 AND 4",
-            "comment": "四季報最新号比で売上高を増額修正した銘柄を抽出。ただし1億円以上増額した銘柄に限定しています",
-            "result_list": [
-                {"disp_flg":1,"ref_id":"MIC001"},
-                {"disp_flg":1,"ref_id":"MIC004"},
-                {"disp_flg":1,"ref_id":"MIC005"},
-                {"disp_flg":1,"ref_id":"MI0001"}
-            ],
-            "cond_list": [
-                {
-                    "cond_id":"MC0388",
-                    "lhs_id":"MI0259",
-                    "rhs_list":[{"ope_id":3,"rhs_value":1}]
-                }
-            ],
-            "auth_level": 3
-        }
-
-        res = requests.post(url, headers=headers, cookies=cookies, json=payload)
-        print(res.status_code)
-        print(res.text)
-
-    else:
-        print("✗ リンクが見つかりませんでした")
+                    if data.get("auth_level") == 3: # 3はログイン済を意味する
+                        print("✓ CSRFトークン取得")
+                        return data.get("token")
+                else:
+                    continue
+            except Exception as e:
+                print(f"トークン取得エラー: {e}")
     
-    # # ページを確認するために待機
-    # print("\nページを表示中（10秒間）...")
-    # time.sleep(10)
+    return None 
+
+# スクリーニングに必要なペイロードを取得(リクエストヘッダーに付加する)
+def getPayloadByConditionID(condition_id):
+    # 条件データを取得
+    condition_url = f"https://api-screening-shikiho.toyokeizai.net/screening/srchcond/{condition_id}"
+    condition_res = requests.get(condition_url, headers=HEADERS, cookies=cookies)
+    return condition_res.json() if condition_res.status_code == 200 else ""
+
+# スクリーニング実行
+def execScreening(payload):
+    # 検索APIを実行
+    print("\nスクリーニング検索を実行中...")
+    search_url = "https://api-screening-shikiho.toyokeizai.net/screening/search"
+    
+    # 取得した条件データをそのまま使用
+    search_res = requests.post(search_url, headers=HEADERS, cookies=cookies, json=payload)
+    
+    print(f"\n検索結果:")
+    print(f"ステータスコード: {search_res.status_code}")
+    
+    search_result = search_res.json()
+    
+    # 結果をファイルに保存
+    with open(f"search_result_{timestamp}.json", 'w', encoding='utf-8') as f:
+        json.dump(search_result, f, indent=2, ensure_ascii=False)
+    print(f"✓ 検索結果を保存しました: search_result_{timestamp}.json")
+
+
+try:
+    # 実行時タイムスタンプ
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # .evnファイル定義のユーザ情報でログイン
+    login_cookies = login(EMAIL, PASSWORD)
+    
+    # スクリーニング方式の一覧からリダイレクトするためcookieを取得しておく
+    screening_cookies = getCookies("https://shikiho.toyokeizai.net/screening")
+    
+    # スクリーニング実行にCRLFトークンが必要
+    crlf_token = getCRFLToken()
+    if not crlf_token:
+        raise RuntimeError("CRLFトークン取得失敗")
+    
+    # ログイン後にcookieを更新
+    cookies = {}
+    cookies.update({c['name']: c['value'] for c in login_cookies})
+    cookies.update({c['name']: c['value'] for c in screening_cookies})
+    
+    # リクエストヘッダー定義
+    HEADERS = {
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json;charset=UTF-8",
+        "origin": "https://shikiho.toyokeizai.net",
+        "referer": "https://shikiho.toyokeizai.net/",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "x-csrf-token": crlf_token
+    }
+
+    # スクリーニングメソッドのID（オンライン四季報定義）
+    CONDITION_ID = "MSC0103"
+    
+    # スクリーニング実行
+    condition_data = getPayloadByConditionID(CONDITION_ID)
+    execScreening(condition_data)
+    
 
 finally:
     driver.quit()
