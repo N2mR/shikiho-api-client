@@ -1,7 +1,9 @@
 import os
 import time
+import random
 import json
 import requests
+from tqdm import tqdm
 from datetime import datetime
 from dotenv import load_dotenv
 from seleniumwire import webdriver
@@ -117,7 +119,14 @@ def execScreening(payload):
     with open(f"search_result_{timestamp}.json", 'w', encoding='utf-8') as f:
         json.dump(search_result, f, indent=2, ensure_ascii=False)
     print(f"✓ 検索結果を保存しました: search_result_{timestamp}.json")
+    return search_result
 
+def getStockDataByID(id, headers, cookies):
+    getStockData_url = f"https://api-shikiho.toyokeizai.net/stocks/v1/stocks/{id}/latest"
+
+    getStockData_res = requests.get(getStockData_url, headers=headers, cookies=cookies)
+    time.sleep(random.uniform(0.2, 0.6))
+    return json.loads(getStockData_res.text)
 
 try:
     # 実行時タイムスタンプ
@@ -154,8 +163,20 @@ try:
     
     # スクリーニング実行
     condition_data = getPayloadByConditionID(CONDITION_ID)
-    execScreening(condition_data)
+    search_result = execScreening(condition_data)
+
+    output_data = []
+    for obj in tqdm(search_result["data"]["results"]):
+        code = obj[1]
+        name = obj[3]
+
+        if code and name:
+            stock_data = getStockDataByID(code, HEADERS, cookies)
+            if stock_data:
+                output_data.append(stock_data)
     
+    with open("output.json", "w", encoding="utf-8") as f:
+        json.dump({"data": output_data}, f, ensure_ascii=False)
 
 finally:
     driver.quit()
