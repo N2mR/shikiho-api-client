@@ -112,21 +112,60 @@ def execScreening(payload):
     
     print(f"\n検索結果:")
     print(f"ステータスコード: {search_res.status_code}")
-    
-    search_result = search_res.json()
-    
-    # 結果をファイルに保存
-    with open(f"search_result_{timestamp}.json", 'w', encoding='utf-8') as f:
-        json.dump(search_result, f, indent=2, ensure_ascii=False)
-    print(f"✓ 検索結果を保存しました: search_result_{timestamp}.json")
-    return search_result
 
+    return search_res.json()
+    
+# 銘柄コードをキーに情報取得
 def getStockDataByID(id, headers, cookies):
     getStockData_url = f"https://api-shikiho.toyokeizai.net/stocks/v1/stocks/{id}/latest"
 
     getStockData_res = requests.get(getStockData_url, headers=headers, cookies=cookies)
     time.sleep(random.uniform(0.2, 0.6))
     return json.loads(getStockData_res.text)
+
+# 銘柄データは不要な情報が多すぎるためフォーマット
+def formatStockData(stockData):
+    ret = stockData.copy()
+
+    # 不要キー削除
+    keys_to_remove = [
+        "profitability_list",
+        "modified_forecasts_list",
+        "modified_forecasts_list_company",
+        "shimen_results",
+        "shimen_dividends",
+        "shimen_finances",
+        "shimen_stats",
+        "shimen_cfs",
+        "shimen_underwriters",
+        "shimen_banks",
+        "shimen_vendors",
+        "shimen_customers",
+        "shimen_recruit",
+    ]
+
+    for key in keys_to_remove:
+        ret.pop(key, None)
+
+    # growth_potential_list を軽量化
+    growth_list = ret.get("growth_potential_list", [])
+
+    ret["growth_potential_list"] = [
+        {
+            "year": x.get("year"),
+            "sales_growth": x.get("sales_growth"),
+            "ope_growth": x.get("ope_growth"),
+            "ord_growth": x.get("ord_growth"),
+        }
+        for x in growth_list
+        if (
+            x.get("sales_growth") not in [None, "ー"]
+            or x.get("ope_growth") not in [None, "ー"]
+            or x.get("ord_growth") not in [None, "ー"]
+        )
+    ]
+
+    return ret
 
 try:
     # 実行時タイムスタンプ
@@ -173,10 +212,12 @@ try:
         if code and name:
             stock_data = getStockDataByID(code, HEADERS, cookies)
             if stock_data:
-                output_data.append(stock_data)
+                formatted_stock_data = formatStockData(stock_data)
+                output_data.append(formatted_stock_data)    
     
     with open("output.json", "w", encoding="utf-8") as f:
         json.dump({"data": output_data}, f, ensure_ascii=False)
+
 
 finally:
     driver.quit()
