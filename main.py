@@ -167,10 +167,23 @@ def formatStockData(stockData):
 
     return ret
 
-try:
-    # 実行時タイムスタンプ
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+# 銘柄ごとにフェッチしてファイル出力する
+def fetch_stock_details(stocks):
+    output_data = []
+    for obj in tqdm(stocks["data"]["results"]):
+        code = obj[1]
+        name = obj[3]
 
+        if code and name:
+            stock_data = getStockDataByID(code, HEADERS, cookies)
+            if stock_data:
+                formatted_stock_data = formatStockData(stock_data)
+                output_data.append(formatted_stock_data)    
+    
+    with open("output.json", "w", encoding="utf-8") as f:
+        json.dump({"data": output_data}, f, ensure_ascii=False)
+
+try:
     # .evnファイル定義のユーザ情報でログイン
     login_cookies = login(EMAIL, PASSWORD)
     
@@ -197,27 +210,15 @@ try:
         "x-csrf-token": crlf_token
     }
 
-    # スクリーニングメソッドのID（オンライン四季報定義）
-    CONDITION_ID = "MSC0103"
+    # スクリーニング方法を示すID（オンライン四季報定義）
+    CONDITION_ID = "MSC0103" # TODO: 任意のIDに変更できるようにする
     
     # スクリーニング実行
     condition_data = getPayloadByConditionID(CONDITION_ID)
-    search_result = execScreening(condition_data)
+    stocks = execScreening(condition_data)
 
-    output_data = []
-    for obj in tqdm(search_result["data"]["results"]):
-        code = obj[1]
-        name = obj[3]
-
-        if code and name:
-            stock_data = getStockDataByID(code, HEADERS, cookies)
-            if stock_data:
-                formatted_stock_data = formatStockData(stock_data)
-                output_data.append(formatted_stock_data)    
-    
-    with open("output.json", "w", encoding="utf-8") as f:
-        json.dump({"data": output_data}, f, ensure_ascii=False)
-
+    # スクリーニング結果を基に銘柄ごとのデータを取得し、ファイル出力する
+    fetch_stock_details(stocks)
 
 finally:
     driver.quit()
