@@ -129,6 +129,7 @@ def formatStockData(stockData):
 
     # 不要キー削除
     keys_to_remove = [
+        "status",
         "profitability_list",
         "modified_forecasts_list",
         "modified_forecasts_list_company",
@@ -142,6 +143,13 @@ def formatStockData(stockData):
         "shimen_vendors",
         "shimen_customers",
         "shimen_recruit",
+        "shimen_established_date",
+        "shimen_address",
+        "shimen_employees",
+        "shimen_auditors",
+        "shimen_shareholders",
+        "shimen_officers",
+        "rivals" ## モデルに応じて消す
     ]
 
     for key in keys_to_remove:
@@ -169,7 +177,9 @@ def formatStockData(stockData):
 
 # 銘柄ごとにフェッチしてファイル出力する
 def fetch_stock_details(stocks):
-    output_data = []
+    stocks_data = []
+    STOCKS_UPPER_LIMIT = 50 # ファイル出力する銘柄数の上限
+
     for obj in tqdm(stocks["data"]["results"]):
         code = obj[1]
         name = obj[3]
@@ -178,10 +188,21 @@ def fetch_stock_details(stocks):
             stock_data = getStockDataByID(code, HEADERS, cookies)
             if stock_data:
                 formatted_stock_data = formatStockData(stock_data)
-                output_data.append(formatted_stock_data)    
+                stocks_data.append(formatted_stock_data)    
+
+
+    # stocks_dataの数に応じてページングする
+    pages = 0
+    if len(stocks_data) < STOCKS_UPPER_LIMIT:
+        pages = 1
+    else :
+        pages = int(len(stocks_data) / STOCKS_UPPER_LIMIT)
     
-    with open("output.json", "w", encoding="utf-8") as f:
-        json.dump({"data": output_data}, f, ensure_ascii=False)
+    # ページごとに銘柄情報をファイル出力
+    for i in range(pages):
+        output_data = stocks_data[i*STOCKS_UPPER_LIMIT:(i+1)*STOCKS_UPPER_LIMIT]
+        with open(f"output{i+1}.json", "w", encoding="utf-8") as f:
+            json.dump({"data": output_data}, f, ensure_ascii=False)
 
 try:
     # .evnファイル定義のユーザ情報でログイン
@@ -215,6 +236,7 @@ try:
     
     # スクリーニング実行
     condition_data = getPayloadByConditionID(CONDITION_ID)
+
     stocks = execScreening(condition_data)
 
     # スクリーニング結果を基に銘柄ごとのデータを取得し、ファイル出力する
