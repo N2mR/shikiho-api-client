@@ -105,10 +105,48 @@ def getPayloadByConditionID(condition_id):
 def execScreening(payload):
     # 検索APIを実行
     print("\nスクリーニング検索を実行中...")
+    
+    # cond_listのrhs_listを正規化（各条件に2つの要素が必要）
+    normalized_cond_list = []
+    for cond in payload.get("cond_list", []):
+        normalized_cond = cond.copy()
+        rhs_list = cond.get("rhs_list", [])
+        
+        # rhs_listが2つの要素を持つように調整
+        if len(rhs_list) == 1:
+            normalized_cond["rhs_list"] = [
+                rhs_list[0],
+                {"ope_id": None, "rhs_value": None}
+            ]
+        elif len(rhs_list) == 0:
+            normalized_cond["rhs_list"] = [
+                {"ope_id": None, "rhs_value": None},
+                {"ope_id": None, "rhs_value": None}
+            ]
+        else:
+            normalized_cond["rhs_list"] = rhs_list
+        
+        normalized_cond_list.append(normalized_cond)
+    
+    # 検索APIに必要な完全なペイロードを構築
+    search_payload = {
+        "filter_list": [],
+        "group_list": [],
+        "sort_list": payload.get("sort_list", []),
+        "srch_cond_id": payload.get("srch_cond_id"),
+        "layer_id": payload.get("layer_id"),
+        "srch_cond_label": payload.get("srch_cond_label"),
+        "relation_exp": payload.get("relation_exp"),
+        "comment": payload.get("comment"),
+        "cond_list": normalized_cond_list,
+        "auth_level": payload.get("auth_level"),
+        "result_list": payload.get("result_list", [])
+    }
+    
     search_url = "https://api-screening-shikiho.toyokeizai.net/screening/search"
     
-    # 取得した条件データをそのまま使用
-    search_res = requests.post(search_url, headers=HEADERS, cookies=cookies, json=payload)
+    # 完全なペイロードを送信
+    search_res = requests.post(search_url, headers=HEADERS, cookies=cookies, json=search_payload)
     
     print(f"\n検索結果:")
     print(f"ステータスコード: {search_res.status_code}")
@@ -232,7 +270,7 @@ try:
     }
 
     # スクリーニング方法を示すID（オンライン四季報定義）
-    CONDITION_ID = "MSC0103" # TODO: 任意のIDに変更できるようにする
+    CONDITION_ID = "MSC0005" # TODO: ハードコーディングではなく、外部ファイルからスクリーニングIDを指示するように変更する
     
     # スクリーニング実行
     condition_data = getPayloadByConditionID(CONDITION_ID)
